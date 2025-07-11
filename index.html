@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Chess Application</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #f7f7f7;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            margin-top: 20px;
+            margin-bottom: 10px;
+            color: #333;
+            letter-spacing: 2px;
+        }
+        #container {
+            display: flex;
+            flex-direction: row;
+            align-items: flex-start;
+            margin-top: 10px;
+        }
+        #board-area {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #board-wrapper {
+            display: grid;
+            grid-template-columns: 24px 1fr;
+            grid-template-rows: 1fr 24px;
+        }
+        #board {
+            display: grid;
+            grid-template-columns: repeat(8, minmax(32px, 7vw));
+            grid-template-rows: repeat(8, minmax(32px, 7vw));
+            width: 56vw;
+            max-width: 400px;
+            min-width: 256px;
+            aspect-ratio: 1/1;
+            border: 2px solid #333;
+            box-shadow: 0 2px 12px #bbb;
+            background: #222;
+        }
+        .square {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3vw;
+            min-font-size: 32px;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s, outline 0.15s;
+        }
+        .dragging {
+            opacity: 0.4;
+        }
+        .drag-over {
+            outline: 3px dashed #2980b9 !important;
+        }
+        .light { background: #f0d9b5; }
+        .dark { background: #b58863; }
+        .selected { outline: 3px solid #e74c3c; z-index: 2; }
+        .legal { outline: 3px solid #27ae60; z-index: 2; }
+        .lastmove { background: #ffe066 !important; }
+        .square:hover { filter: brightness(1.12); }
+        .coords {
+            font-size: 1.1vw;
+            color: #555;
+            text-align: center;
+            user-select: none;
+            font-weight: bold;
+        }
+        #status {
+            margin: 12px 0 8px 0;
+            font-size: 1.2em;
+            min-height: 1.5em;
+            color: #222;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+        #captured-area {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-left: 24px;
+        }
+        .captured-row {
+            min-height: 32px;
+            margin: 6px 0;
+            font-size: 1.5em;
+            color: #444;
+        }
+        #restart {
+            margin-top: 16px;
+            padding: 7px 18px;
+            font-size: 1em;
+            border-radius: 6px;
+            border: 1px solid #888;
+            background: #f0d9b5;
+            color: #222;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        #restart:hover {
+            background: #ffe066;
+        }
+        /* Promotion Modal Styles */
+        #promotion-modal {
+            display: none;
+            position: fixed;
+            z-index: 10;
+            left: 0; top: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.35);
+            align-items: center;
+            justify-content: center;
+        }
+        #promotion-content {
+            background: #fffbe6;
+            border-radius: 10px;
+            padding: 24px 32px;
+            box-shadow: 0 2px 16px #888;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .promotion-btns {
+            display: flex;
+            gap: 18px;
+            margin-top: 12px;
+        }
+        .promotion-btn {
+            font-size: 2.7em; /* Increased from 2em */
+            padding: 8px 16px;
+            border: 2px solid #b58863;
+            border-radius: 8px;
+            background: #f0d9b5;
+            cursor: pointer;
+            transition: background 0.2s, border 0.2s;
+        }
+        .promotion-btn:hover {
+            background: #ffe066;
+            border-color: #e67e22;
+        }
+        #engine-select {
+            margin-top: 10px;
+            margin-bottom: 10px;
+            font-size: 1em;
+            padding: 5px 12px;
+            border-radius: 5px;
+            border: 1px solid #aaa;
+            background: #f0f0f0;
+        }
+        #copy-pgn {
+            margin: 10px 0 10px 0;
+            padding: 6px 16px;
+            font-size: 1em;
+            border-radius: 5px;
+            border: 1px solid #aaa;
+            background: #f0f0f0;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        #copy-pgn:hover {
+            background: #ffe066;
+        }
+        @media (max-width: 600px) {
+            #board {
+                width: 96vw;
+                min-width: 96vw;
+                max-width: 96vw;
+            }
+            .square { font-size: 7vw; } /* Increased from 5vw */
+            .coords { font-size: 2.5vw; }
+        }
+    </style>
+</head>
+<body>
+    <h1>Chess Application</h1>
+    <select id="engine-select">
+        <option value="random">Player vs Random</option>
+        <option value="stockfish">Player vs Stockfish (chess-api.com)</option>
+        <option value="pvp">Player vs Player</option>
+    </select>
+    <button id="copy-pgn" title="Copy PGN to clipboard">Copy PGN</button>
+    <p id="status1"></p>
+      <script>
+    async function postChessApi(data = {}) {
+      try {
+        const response = await fetch("https://chess-api.com/v1", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(data)
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        document.getElementById("status").textContent = "✅ Connected Successfully";
+        const result = await response.json();
+        console.log("✅ Success:", result);
+      } catch (error) {
+        console.error("❌ Error:", error.message);
+        document.getElementById('status1').innerHTML = `<span style="color:#e74c3c">❌ Failed to connect to Stockfish API &rarr; Player vs. Stockfish (chess-api.com) is not availible at this time.</span>`;
+      }
+    }
+
+    // Example usage
+    postChessApi({
+      fen: "8/1P1R4/n1r2B2/3Pp3/1k4P1/6K1/Bppr1P2/2q5 w - - 0 1",
+      depth: 12,
+      variants: 2
+    });
+  </script>
+    <div id="status"></div>
+    <div id="container">
+        <div id="board-area">
+            <div id="board-wrapper">
+                <div id="ranks" style="display: flex; flex-direction: column;"></div>
+                <div id="board"></div>
+                <div></div>
+                <div id="files" style="display: flex; flex-direction: row;"></div>
+            </div>
+            <button id="restart">Restart</button>
+        </div>
+        <div id="captured-area">
+            <div class="captured-row" id="captured-black"></div>
+            <div class="captured-row" id="captured-white"></div>
+        </div>
+    </div>
+    <div id="promotion-modal">
+        <div id="promotion-content">
+            <div style="font-size:1.2em; margin-bottom:8px;">Choose promotion:</div>
+            <div class="promotion-btns">
+                <button class="promotion-btn" data-piece="q">♛</button>
+                <button class="promotion-btn" data-piece="r">♜</button>
+                <button class="promotion-btn" data-piece="n">♞</button>
+                <button class="promotion-btn" data-piece="b">♝</button>
+            </div>
+        </div>
+    </div><br>
+    <div style="background-color: tan; padding: 4px; border-radius: 20px;">
+    <center><h3>Choose a opponent: </h3></center>
+    <p>&rarr; Player vs Player: Play against someone else on the <mark style="background-color: #3ce7bc;">same device</mark>.</p>
+    <p>&rarr; Player vs Random: Play against a <mark style="background-color: rgb(178, 175, 220)">computer</mark> that plays <mark>random</mark> <mark style="background-color:rgba(0, 255, 30, 0.588);">legal moves</mark>. </p>
+    <p>&rarr; Player vs Stockfish (chess-api.com): Play against <mark style="background-color: #e87878;">Stockfish 17</mark>. </p>
+    <p style="text-align: center;">Click on the selection box above <b>&uarr;</b> to select your opponent. </p>
+    </div>
+    <br>
+
+    <p style="color:red;"><b>Castling is not supported yet. (You can see the option to castle, but don't do it).</b></p>
+ 
+    <br>
+    
+    <script>
+    // --- Chess Engine ---
+    const PIECES = {
+        p: '♟', r: '♜', n: '♞', b: '♝', q: '♛', k: '♚',
+        P: '♙', R: '♖', N: '♘', B: '♗', Q: '♕', K: '♔'
+    };
+
+    function deepClone(obj) {
+        return JSON.parse(JSON.stringify(obj));
+    }
+
+    class Chess {
+        constructor() {
+            this.reset();
+        }
+
+        reset() {
+            this.board = [
+                ['r','n','b','q','k','b','n','r'],
+                ['p','p','p','p','p','p','p','p'],
+                ['','','','','','','',''],
+                ['','','','','','','',''],
+                ['','','','','','','',''],
+                ['','','','','','','',''],
+                ['P','P','P','P','P','P','P','P'],
+                ['R','N','B','Q','K','B','N','R']
+            ];
+            this.turn = 'w';
+            this.castling = {w: {K: true, Q: true}, b: {K: true, Q: true}};
+            this.enPassant = null;
+            this.halfmove = 0;
+            this.fullmove = 1;
+            this.history = [];
+            this.repetition = {};
+            this.captured = {w: [], b: []};
+            this.lastMove = null;
+            this.updateRepetition();
+        }
+
+        inBounds(r, c) {
+            return r >= 0 && r < 8 && c >= 0 && c < 8;
+        }
+
+        getColor(piece) {
+            if (!piece) return null;
+            return piece === piece.toUpperCase() ? 'w' : 'b';
+        }
+
+        isKingAttacked(color, board = null) {
+            board = board || this.board;
+            let king = color === 'w' ? 'K' : 'k';
+            let kr = -1, kc = -1;
+            for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++)
+                if (board[r][c] === king) { kr = r; kc = c; }
+            // Check all enemy moves for attack on king
+            let enemy = color === 'w' ? 'b' : 'w';
+            let moves = this.generateMoves(enemy, board, true);
+            return moves.some(m => m[2] === kr && m[3] === kc);
+        }
+
+        generateMoves(color, board = null, forAttack = false) {
+            board = board || this.board;
+            let moves = [];
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    let piece = board[r][c];
+                    if (!piece || this.getColor(piece) !== color) continue;
+                    let dirs, steps, targets;
+                    switch (piece.toLowerCase()) {
+                        case 'p': {
+                            let dir = color === 'w' ? -1 : 1;
+                            let startRow = color === 'w' ? 6 : 1;
+                            // Forward
+                            if (!forAttack && this.inBounds(r+dir, c) && !board[r+dir][c])
+                                moves.push([r, c, r+dir, c, null]);
+                            // Double
+                            if (!forAttack && r === startRow && !board[r+dir][c] && !board[r+2*dir][c])
+                                moves.push([r, c, r+2*dir, c, null]);
+                            // Captures
+                            for (let dc of [-1,1]) {
+                                let nr = r+dir, nc = c+dc;
+                                if (this.inBounds(nr, nc)) {
+                                    if (board[nr][nc] && this.getColor(board[nr][nc]) !== color)
+                                        moves.push([r, c, nr, nc, null]);
+                                    // En passant
+                                    if (this.enPassant && this.enPassant[0] === nr && this.enPassant[1] === nc)
+                                        moves.push([r, c, nr, nc, 'ep']);
+                                }
+                            }
+                            break;
+                        }
+                        case 'n': {
+                            for (let [dr,dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]) {
+                                let nr = r+dr, nc = c+dc;
+                                if (this.inBounds(nr, nc) && (!board[nr][nc] || this.getColor(board[nr][nc]) !== color))
+                                    moves.push([r, c, nr, nc, null]);
+                            }
+                            break;
+                        }
+                        case 'b': dirs = [[-1,-1],[-1,1],[1,-1],[1,1]]; steps = 8; break;
+                        case 'r': dirs = [[-1,0],[1,0],[0,-1],[0,1]]; steps = 8; break;
+                        case 'q': dirs = [[-1,-1],[-1,1],[1,-1],[1,1],[-1,0],[1,0],[0,-1],[0,1]]; steps = 8; break;
+                        case 'k': {
+                            dirs = [[-1,-1],[-1,1],[1,-1],[1,1],[-1,0],[1,0],[0,-1],[0,1]]; steps = 1;
+                            // Castling
+                            if (!forAttack && !this.isKingAttacked(color, board)) {
+                                if (this.castling[color].K && !board[r][c+1] && !board[r][c+2]
+                                    && !this.isKingAttacked(color, this.makeTempMove(r,c,r,c+1,board))
+                                    && !this.isKingAttacked(color, this.makeTempMove(r,c,r,c+2,board)))
+                                    moves.push([r,c,r,c+2,'ck']);
+                                if (this.castling[color].Q && !board[r][c-1] && !board[r][c-2] && !board[r][c-3]
+                                    && !this.isKingAttacked(color, this.makeTempMove(r,c,r,c-1,board))
+                                    && !this.isKingAttacked(color, this.makeTempMove(r,c,r,c-2,board)))
+                                    moves.push([r,c,r,c-2,'cq']);
+                            }
+                            break;
+                        }
+                    }
+                    if (dirs) {
+                        for (let [dr,dc] of dirs) {
+                            for (let s = 1; s <= steps; s++) {
+                                let nr = r+dr*s, nc = c+dc*s;
+                                if (!this.inBounds(nr, nc)) break;
+                                if (!board[nr][nc])
+                                    moves.push([r, c, nr, nc, null]);
+                                else {
+                                    if (this.getColor(board[nr][nc]) !== color)
+                                        moves.push([r, c, nr, nc, null]);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // Pawn promotions
+            let promo = [];
+            for (let m of moves) {
+                let [fr,fc,tr,tc] = m;
+                let piece = board[fr][fc];
+                if (piece && piece.toLowerCase() === 'p' && (tr === 0 || tr === 7)) {
+                    for (let p of ['q','r','b','n'])
+                        promo.push([fr,fc,tr,tc,piece === piece.toUpperCase() ? p.toUpperCase() : p]);
+                } else {
+                    promo.push(m);
+                }
+            }
+            return promo;
+        }
+
+        makeTempMove(fr,fc,tr,tc,board) {
+            let b = deepClone(board);
+            b[tr][tc] = b[fr][fc];
+            b[fr][fc] = '';
+            return b;
+        }
+
+        moveIsLegal(move) {
+            let moves = this.generateMoves(this.turn);
+            return moves.some(m =>
+                m[0] === move[0] && m[1] === move[1] && m[2] === move[2] && m[3] === move[3] &&
+                (m[4] === move[4] || (!m[4] && !move[4]))
+            ) && !this.moveLeavesKingInCheck(move);
+        }
+
+        moveLeavesKingInCheck(move) {
+            let [fr,fc,tr,tc,promo] = move;
+            let b = deepClone(this.board);
+            let piece = b[fr][fc];
+            b[tr][tc] = promo ? promo : piece;
+            b[fr][fc] = '';
+            // En passant
+            if (piece.toLowerCase() === 'p' && fc !== tc && !this.board[tr][tc])
+                b[fr][tc] = '';
+            return this.isKingAttacked(this.turn, b);
+        }
+
+        makeMove(move) {
+            let [fr,fc,tr,tc,promo] = move;
+            let piece = this.board[fr][fc];
+            // Save state for undo
+            this.history.push({
+                board: deepClone(this.board),
+                turn: this.turn,
+                castling: deepClone(this.castling),
+                enPassant: this.enPassant,
+                halfmove: this.halfmove,
+                fullmove: this.fullmove,
+                captured: deepClone(this.captured),
+                lastMove: this.lastMove
+            });
+            // Capture
+            let capturedPiece = this.board[tr][tc];
+            if (capturedPiece) {
+                this.captured[this.turn].push(capturedPiece);
+            }
+            // En passant capture
+            if (piece.toLowerCase() === 'p' && fc !== tc && !this.board[tr][tc]) {
+                let epRow = this.turn === 'w' ? tr+1 : tr-1;
+                let epPiece = this.board[epRow][tc];
+                if (epPiece) this.captured[this.turn].push(epPiece);
+            }
+            // Move piece
+            this.board[tr][tc] = promo ? promo : piece;
+            this.board[fr][fc] = '';
+            // Pawn special
+            if (piece.toLowerCase() === 'p') {
+                this.halfmove = 0;
+                // En passant
+                if (fc !== tc && !capturedPiece) {
+                    this.board[fr][tc] = '';
+                }
+                // Set en passant
+                if (Math.abs(tr-fr) === 2)
+                    this.enPassant = [fr + (tr-fr)/2, fc];
+                else
+                    this.enPassant = null;
+            } else {
+                this.halfmove++;
+                this.enPassant = null;
+            }
+            // Castling rights
+            if (piece === 'K') this.castling.w = {K: false, Q: false};
+            if (piece === 'k') this.castling.b = {K: false, Q: false};
+            if (piece === 'R' && fr === 7 && fc === 0) this.castling.w.Q = false;
+            if (piece === 'R' && fr === 7 && fc === 7) this.castling.w.K = false;
+            if (piece === 'r' && fr === 0 && fc === 0) this.castling.b.Q = false;
+            if (piece === 'r' && fr === 0 && fc === 7) this.castling.b.K = false;
+            // Castling move
+            if (piece.toLowerCase() === 'k' && Math.abs(tc-fc) === 2) {
+                if (tc === 6) { // kingside
+                    this.board[tr][5] = this.board[tr][7];
+                    this.board[tr][7] = '';
+                } else if (tc === 2) { // queenside
+                    this.board[tr][3] = this.board[tr][0];
+                    this.board[tr][0] = '';
+                }
+            }
+            // Update turn
+            this.lastMove = [fr, fc, tr, tc];
+            if (this.turn === 'b') this.fullmove++;
+            this.turn = this.turn === 'w' ? 'b' : 'w';
+            this.updateRepetition();
+        }
+
+        undo() {
+            if (this.history.length === 0) return;
+            let prev = this.history.pop();
+            this.board = prev.board;
+            this.turn = prev.turn;
+            this.castling = prev.castling;
+            this.enPassant = prev.enPassant;
+            this.halfmove = prev.halfmove;
+            this.fullmove = prev.fullmove;
+            this.captured = prev.captured;
+            this.lastMove = prev.lastMove;
+            this.updateRepetition();
+        }
+
+        updateRepetition() {
+            let key = this.board.map(row=>row.join('')).join('/') + this.turn +
+                JSON.stringify(this.castling) + (this.enPassant ? this.enPassant.join(',') : '');
+            this.repetition[key] = (this.repetition[key] || 0) + 1;
+        }
+
+        isThreefoldRepetition() {
+            let key = this.board.map(row=>row.join('')).join('/') + this.turn +
+                JSON.stringify(this.castling) + (this.enPassant ? this.enPassant.join(',') : '');
+            return this.repetition[key] >= 3;
+        }
+
+        isStalemate() {
+            if (this.isCheckmate()) return false;
+            let moves = this.generateMoves(this.turn).filter(m => this.moveIsLegal(m));
+            return moves.length === 0;
+        }
+
+        isCheckmate() {
+            if (!this.isKingAttacked(this.turn)) return false;
+            let moves = this.generateMoves(this.turn).filter(m => this.moveIsLegal(m));
+            return moves.length === 0;
+        }
+
+        getLegalMoves(from) {
+            return this.generateMoves(this.turn).filter(m => m[0] === from[0] && m[1] === from[1] && this.moveIsLegal(m));
+        }
+
+        getAllLegalMoves() {
+            return this.generateMoves(this.turn).filter(m => this.moveIsLegal(m));
+        }
+    }
+
+    // --- UI and Game Logic ---
+    const boardDiv = document.getElementById('board');
+    const statusDiv = document.getElementById('status');
+    const restartBtn = document.getElementById('restart');
+    const capturedWhiteDiv = document.getElementById('captured-white');
+    const capturedBlackDiv = document.getElementById('captured-black');
+    const ranksDiv = document.getElementById('ranks');
+    const filesDiv = document.getElementById('files');
+    let chess = new Chess();
+    let selected = null;
+    let legalSquares = [];
+
+    function renderCoords() {
+        ranksDiv.innerHTML = '';
+        filesDiv.innerHTML = '';
+        for (let r = 0; r < 8; r++) {
+            let el = document.createElement('div');
+            el.className = 'coords';
+            el.style.height = '100%';
+            el.style.flex = '1';
+            el.textContent = 8 - r;
+            ranksDiv.appendChild(el);
+        }
+        for (let c = 0; c < 8; c++) {
+            let el = document.createElement('div');
+            el.className = 'coords';
+            el.style.width = '100%';
+            el.style.flex = '1';
+            el.textContent = String.fromCharCode(97 + c);
+            filesDiv.appendChild(el);
+        }
+    }
+
+    function renderCaptured() {
+        // Show captured pieces for each side, sorted by piece type
+        let order = ['Q','R','B','N','P'];
+        let w = chess.captured.b.filter(x => x === x.toUpperCase());
+        let b = chess.captured.w.filter(x => x === x.toLowerCase());
+        let wstr = order.map(p => PIECES[p].repeat(w.filter(x=>x===p).length)).join(' ');
+        let bstr = order.map(p => PIECES[p.toLowerCase()].repeat(b.filter(x=>x===p.toLowerCase()).length)).join(' ');
+        capturedBlackDiv.innerHTML = bstr;
+        capturedWhiteDiv.innerHTML = wstr;
+    }
+
+    // Drag and Drop logic
+    let dragFrom = null;
+    let dragPiece = null;
+
+    function getSquareDiv(r, c) {
+        return boardDiv.querySelector(`.square[data-r="${r}"][data-c="${c}"]`);
+    }
+
+    function handleDragStart(e) {
+        let r = parseInt(this.dataset.r), c = parseInt(this.dataset.c);
+        let piece = chess.board[r][c];
+        if (!piece || chess.getColor(piece) !== chess.turn || chess.turn !== 'w') {
+            e.preventDefault();
+            return false;
+        }
+        dragFrom = [r, c];
+        dragPiece = piece;
+        this.classList.add('dragging');
+        // Set drag image for better UX
+        if (e.dataTransfer) {
+            let img = document.createElement('div');
+            img.style.fontSize = '48px';
+            img.style.fontFamily = 'Segoe UI, Arial, sans-serif';
+            img.style.width = '48px';
+            img.style.height = '48px';
+            img.style.display = 'flex';
+            img.style.alignItems = 'center';
+            img.style.justifyContent = 'center';
+            img.textContent = PIECES[piece];
+            document.body.appendChild(img);
+            e.dataTransfer.setDragImage(img, 24, 24);
+            setTimeout(() => document.body.removeChild(img), 0);
+        }
+    }
+
+    function handleDragEnd(e) {
+        this.classList.remove('dragging');
+        dragFrom = null;
+        dragPiece = null;
+        boardDiv.querySelectorAll('.drag-over').forEach(sq => sq.classList.remove('drag-over'));
+    }
+
+    function handleDragOver(e) {
+        e.preventDefault();
+        this.classList.add('drag-over');
+    }
+
+    function handleDragLeave(e) {
+        this.classList.remove('drag-over');
+    }
+
+    function handleDrop(e) {
+        e.preventDefault();
+        this.classList.remove('drag-over');
+        if (!dragFrom) return;
+        let toR = parseInt(this.dataset.r), toC = parseInt(this.dataset.c);
+        let legal = chess.getLegalMoves(dragFrom);
+        let move = legal.find(m => m[2] === toR && m[3] === toC);
+        if (move) {
+            let fromPiece = chess.board[move[0]][move[1]];
+            if (fromPiece && fromPiece.toLowerCase() === 'p' && (move[2] === 0 || move[2] === 7)) {
+                showPromotionModal([...move], chess.turn);
+            } else {
+                chess.makeMove(move);
+                selected = null;
+                legalSquares = [];
+                render();
+                if (engineType !== 'pvp') setTimeout(computerMove, 300);
+            }
+        }
+        dragFrom = null;
+        dragPiece = null;
+    }
+
+    // Patch render to add drag/drop handlers
+    function render() {
+        boardDiv.innerHTML = '';
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                let sq = document.createElement('div');
+                sq.className = 'square ' + ((r+c)%2===0 ? 'light' : 'dark');
+                if (selected && selected[0] === r && selected[1] === c) sq.classList.add('selected');
+                if (legalSquares.some(m => m[2] === r && m[3] === c)) sq.classList.add('legal');
+                if (chess.lastMove && ((chess.lastMove[0] === r && chess.lastMove[1] === c) || (chess.lastMove[2] === r && chess.lastMove[3] === c)))
+                    sq.classList.add('lastmove');
+                sq.dataset.r = r;
+                sq.dataset.c = c;
+                let piece = chess.board[r][c];
+                if (piece) {
+                    sq.textContent = PIECES[piece];
+                    // Allow drag for both sides in PvP, otherwise only white
+                    if (
+                        chess.getColor(piece) === chess.turn &&
+                        !chess.isCheckmate() && !chess.isStalemate() && !chess.isThreefoldRepetition() &&
+                        (
+                            engineType === 'pvp' ||
+                            (engineType !== 'pvp' && chess.turn === 'w')
+                        )
+                    ) {
+                        sq.setAttribute('draggable', 'true');
+                        sq.ondragstart = handleDragStart;
+                        sq.ondragend = handleDragEnd;
+                    }
+                }
+                sq.ondragover = handleDragOver;
+                sq.ondragleave = handleDragLeave;
+                sq.ondrop = handleDrop;
+                boardDiv.appendChild(sq);
+            }
+        }
+        let msg = '';
+        if (chess.isCheckmate()) {
+            msg = `<span style="color:#e74c3c">${chess.turn === 'w' ? 'White' : 'Black'} is checkmated. ${chess.turn === 'w' ? 'Black' : 'White'} won. </span>`;
+        } else if (chess.isStalemate()) {
+            msg = `<span style="color:#2980b9">Stalemate - Draw</span>`;
+        } else if (chess.isThreefoldRepetition()) {
+            msg = `<span style="color:#8e44ad">Threefold Repitition - Draw</span>`;
+        } else {
+            msg = `<span style="color:${chess.turn === 'w' ? '#222' : '#444'}">${chess.turn === 'w' ? 'White' : 'Black'}'s turn</span>`;
+            if (chess.isKingAttacked(chess.turn)) msg += ' <span style="color:#e67e22">(Check)</span>';
+        }
+        statusDiv.innerHTML = msg;
+        renderCaptured();
+    }
+
+    let promotionMove = null;
+    const promotionModal = document.getElementById('promotion-modal');
+    const promotionBtns = document.querySelectorAll('.promotion-btn');
+
+    function showPromotionModal(move, color) {
+        promotionMove = move;
+        // Set correct piece symbols for color
+        promotionBtns.forEach(btn => {
+            let p = btn.getAttribute('data-piece');
+            btn.textContent = PIECES[color === 'w' ? p.toUpperCase() : p];
+        });
+        promotionModal.style.display = 'flex';
+    }
+
+    function hidePromotionModal() {
+        promotionModal.style.display = 'none';
+        promotionMove = null;
+    }
+
+    promotionBtns.forEach(btn => {
+        btn.onclick = function() {
+            if (!promotionMove) return;
+            let p = btn.getAttribute('data-piece');
+            let color = chess.turn;
+            promotionMove[4] = color === 'w' ? p.toUpperCase() : p;
+            chess.makeMove(promotionMove);
+            selected = null;
+            legalSquares = [];
+            hidePromotionModal();
+            render();
+            if (engineType !== 'pvp') setTimeout(computerMove, 300);
+        };
+    });
+
+    function handleSquareClick(e) {
+        if (chess.isCheckmate() || chess.isStalemate() || chess.isThreefoldRepetition()) return;
+        let r = parseInt(e.target.dataset.r), c = parseInt(e.target.dataset.c);
+        let piece = chess.board[r][c];
+        if (selected) {
+            // Try move
+            let move = legalSquares.find(m => m[2] === r && m[3] === c);
+            if (move) {
+                // Check if this is a promotion move
+                let isPromotion = false;
+                let fromPiece = chess.board[move[0]][move[1]];
+                if (fromPiece && fromPiece.toLowerCase() === 'p' && (move[2] === 0 || move[2] === 7)) {
+                    isPromotion = true;
+                }
+                if (isPromotion) {
+                    showPromotionModal([...move], chess.turn);
+                    return;
+                } else {
+                    chess.makeMove(move);
+                    selected = null;
+                    legalSquares = [];
+                    render();
+                    if (engineType !== 'pvp') setTimeout(computerMove, 300);
+                    return;
+                }
+            }
+            selected = null;
+            legalSquares = [];
+        }
+        // Allow both sides to move in PvP, otherwise only white
+        if (
+            piece &&
+            chess.getColor(piece) === chess.turn &&
+            (
+                engineType === 'pvp' ||
+                (engineType !== 'pvp' && chess.turn === 'w')
+            )
+        ) {
+            selected = [r, c];
+            legalSquares = chess.getLegalMoves([r, c]);
+        }
+        render();
+    }
+
+    let engineType = 'random';
+    const engineSelect = document.getElementById('engine-select');
+    engineSelect.addEventListener('change', function() {
+        engineType = this.value;
+        chess = new Chess();
+        selected = null;
+        legalSquares = [];
+        render();
+    });
+
+    // Helper to get FEN for API
+    function boardToFEN(chess) {
+        let fen = '';
+        for (let r = 0; r < 8; r++) {
+            let empty = 0;
+            for (let c = 0; c < 8; c++) {
+                let p = chess.board[r][c];
+                if (!p) empty++;
+                else {
+                    if (empty) { fen += empty; empty = 0; }
+                    fen += p;
+                }
+            }
+            if (empty) fen += empty;
+            if (r !== 7) fen += '/';
+        }
+        fen += ' ';
+        fen += chess.turn === 'w' ? 'w' : 'b';
+        fen += ' ';
+        let c = [];
+        if (chess.castling.w.K) c.push('K');
+        if (chess.castling.w.Q) c.push('Q');
+        if (chess.castling.b.K) c.push('k');
+        if (chess.castling.b.Q) c.push('q');
+        fen += c.length ? c.join('') : '-';
+        fen += ' ';
+        fen += chess.enPassant ? String.fromCharCode(97 + chess.enPassant[1]) + (8 - chess.enPassant[0]) : '-';
+        fen += ' ';
+        fen += chess.halfmove;
+        fen += ' ';
+        fen += chess.fullmove;
+        return fen;
+    }
+
+    // Use chess-api.com for Stockfish move
+    async function postChessApi(data = {}) {
+        const response = await fetch("https://chess-api.com/v1", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(data),
+        });
+        return response.json();
+    }
+
+    function uciToMoveObj(uci) {
+        // e2e4, e7e8q, etc.
+        let from = [8 - parseInt(uci[1]), uci.charCodeAt(0) - 97];
+        let to = [8 - parseInt(uci[3]), uci.charCodeAt(2) - 97];
+        let promo = uci.length === 5 ? uci[4] : null;
+        return {from, to, promo};
+    }
+
+    function computerMove() {
+        if (engineType === 'pvp') return; // No computer move in PvP
+        if (chess.turn !== 'b' || chess.isCheckmate() || chess.isStalemate() || chess.isThreefoldRepetition()) return;
+        if (engineType === 'random') {
+            let moves = chess.getAllLegalMoves();
+            if (moves.length === 0) return;
+            let move = moves[Math.floor(Math.random() * moves.length)];
+            chess.makeMove(move);
+            render();
+        } else if (engineType === 'stockfish') {
+            let fen = boardToFEN(chess);
+            // Show thinking status
+            statusDiv.innerHTML = `<span style="color:#2980b9">Stockfish is thinking...</span>`;
+            postChessApi({ fen, depth: 20, maxThinkingTime: 100 }).then(data => {
+                if (!data || !data.move) {
+                    // fallback to random if API fails
+                    let moves = chess.getAllLegalMoves();
+                    if (moves.length === 0) return;
+                    let move = moves[Math.floor(Math.random() * moves.length)];
+                    chess.makeMove(move);
+                    render();
+                    return;
+                }
+                let moveObj = uciToMoveObj(data.move);
+                // Find the legal move matching this
+                let move = chess.getAllLegalMoves().find(m =>
+                    m[0] === moveObj.from[0] && m[1] === moveObj.from[1] &&
+                    m[2] === moveObj.to[0] && m[3] === moveObj.to[1] &&
+                    (moveObj.promo ? (m[4] && m[4].toLowerCase() === moveObj.promo) : true)
+                );
+                if (move) {
+                    chess.makeMove(move);
+                    render();
+                }
+            }).catch(() => {
+                // fallback to random if API fails
+                document.getElementById('status1').innerHTML = `<span style="color:#e74c3c">ERROR: Failed to connect to Stockfish API (chess-api.com). The computer is now: random legal move. </span>`;
+                let moves = chess.getAllLegalMoves();
+                if (moves.length === 0) return;
+                let move = moves[Math.floor(Math.random() * moves.length)];
+                chess.makeMove(move);
+                render();
+            });
+        }
+    }
+
+    boardDiv.addEventListener('click', handleSquareClick);
+    restartBtn.addEventListener('click', () => {
+        chess = new Chess();
+        selected = null;
+        legalSquares = [];
+        render();
+    });
+
+    renderCoords();
+    render();
+
+    // PGN generation
+    function moveToSAN(move, boardBefore, chessObj) {
+        // Minimal SAN for mainline moves (no disambiguation, no check/mate, no annotation)
+        const piece = boardBefore[move[0]][move[1]];
+        const isPawn = piece.toLowerCase() === 'p';
+        const files = 'abcdefgh';
+        let san = '';
+        if (!isPawn) san += piece.toUpperCase() !== 'P' ? piece.toUpperCase() : '';
+        // Capture
+        if (boardBefore[move[2]][move[3]] || (isPawn && move[1] !== move[3])) {
+            if (isPawn) san += files[move[1]];
+            san += 'x';
+        }
+        san += files[move[3]] + (8 - move[2]);
+        // Promotion
+        if (move[4]) san += '=' + move[4].toUpperCase();
+        // Castling
+        if (piece.toLowerCase() === 'k' && Math.abs(move[3] - move[1]) === 2) {
+            if (move[3] === 6) return 'O-O';
+            if (move[3] === 2) return 'O-O-O';
+        }
+        return san;
+    }
+
+    function getPGN() {
+        let chessTmp = new Chess();
+        let pgn = [];
+        let moveNum = 1;
+        for (let i = 0; i < chess.history.length; ++i) {
+            let prev = chessTmp.board.map(row => row.slice());
+            let move = chess.history[i];
+            let moveArr = null;
+            // Find move difference
+            let from = null, to = null, promo = null;
+            for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+                if (move.board[r][c] && !chessTmp.board[r][c]) to = [r, c];
+                if (!move.board[r][c] && chessTmp.board[r][c]) from = [r, c];
+            }
+            if (from && to) {
+                let piece = chessTmp.board[from[0]][from[1]];
+                // Try to find promotion
+                if (piece && piece.toLowerCase() === 'p' && (to[0] === 0 || to[0] === 7)) {
+                    promo = move.board[to[0]][to[1]];
+                }
+                moveArr = [from[0], from[1], to[0], to[1], promo];
+                let san = moveToSAN(moveArr, chessTmp.board, chessTmp);
+                if (chessTmp.turn === 'w') pgn.push(moveNum + '.');
+                pgn.push(san);
+                if (chessTmp.turn === 'b') moveNum++;
+                chessTmp.makeMove(moveArr);
+            }
+        }
+        return pgn.join(' ');
+    }
+
+    // Copy PGN button logic
+    const copyPgnBtn = document.getElementById('copy-pgn');
+    copyPgnBtn.addEventListener('click', function() {
+        const pgn = getPGN();
+        // Fallback for Clipboard API errors
+        function fallbackCopyTextToClipboard(text) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                document.execCommand('copy');
+            } catch (err) {}
+            document.body.removeChild(textArea);
+        }
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(pgn).then(() => {
+                copyPgnBtn.textContent = 'Copied!';
+                setTimeout(() => { copyPgnBtn.textContent = 'Copy PGN'; }, 1200);
+            }).catch(() => {
+                fallbackCopyTextToClipboard(pgn);
+                copyPgnBtn.textContent = 'Copied!';
+                setTimeout(() => { copyPgnBtn.textContent = 'Copy PGN'; }, 1200);
+            });
+        } else {
+            fallbackCopyTextToClipboard(pgn);
+            copyPgnBtn.textContent = 'Copied!';
+            setTimeout(() => { copyPgnBtn.textContent = 'Copy PGN'; }, 1200);
+        }
+    });
+    </script>
+</body>
+</html>
